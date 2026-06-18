@@ -8,8 +8,8 @@ from enum import Enum, auto
 import glfw
 import numpy as np
 
-from .hud import Hud
-from .math_utils import apply2, clamp, distance, identity3, rotate2, scale2, translate2, vec2
+from .hud import Hud, HudColumn
+from .math_utils import apply2, clamp, distance, identity3, rotate2, scale2, shape_centroid, translate2, vec2
 from .renderer import Renderer
 from .shapes import LineShape, PolygonShape, PolylineShape, Shape
 from .viewport import Viewport
@@ -63,8 +63,9 @@ class MiniPaintApp:
         self._dragging = False
         self._drag_origin = vec2(0.0, 0.0)
         self._initial_transform = identity3()
-        self._scale_anchor = vec2(0.0, 0.0)
+        self._transform_pivot = vec2(0.0, 0.0)
         self._rotate_anchor = 0.0
+        self._scale_anchor_distance = 1.0
 
     def run(self) -> None:
         if not glfw.init():
@@ -202,46 +203,57 @@ class MiniPaintApp:
         self._dragging = True
         self._drag_origin = point.copy()
         self._initial_transform = shape.transform.copy()
+        self._transform_pivot = _shape_pivot(self._initial_transform, shape)
 
-        if self.transform_mode == TransformMode.SCALE:
-            self._scale_anchor = _shape_center(shape)
-        elif self.transform_mode == TransformMode.ROTATE:
-            center = _shape_center(shape)
-            self._rotate_anchor = math.atan2(point[1] - center[1], point[0] - center[0])
+        if self.transform_mode == TransformMode.ROTATE:
+            self._rotate_anchor = math.atan2(
+                point[1] - self._transform_pivot[1],
+                point[0] - self._transform_pivot[0],
+            )
+        elif self.transform_mode == TransformMode.SCALE:
+            offset = point - self._transform_pivot
+            self._scale_anchor_distance = max(float(np.linalg.norm(offset)), 1e-4)
 
     def _apply_live_transform(self) -> None:
         assert self.selected_index is not None
         shape = self.shapes[self.selected_index]
         current = self._mouse_world
+        pivot = self._transform_pivot
 
         if self.transform_mode == TransformMode.TRANSLATE:
             delta = current - self._drag_origin
             shape.transform = translate2(delta[0], delta[1]) @ self._initial_transform
 
         elif self.transform_mode == TransformMode.ROTATE:
-            center = _shape_center_from_transform(self._initial_transform, shape)
-            start_angle = self._rotate_anchor
-            current_angle = math.atan2(current[1] - center[1], current[0] - center[0])
-            delta_angle = current_angle - start_angle
-            to_origin = translate2(-center[0], -center[1])
-            back = translate2(center[0], center[1])
-            shape.transform = back @ rotate2(delta_angle) @ to_origin @ self._initial_transform
+            current_angle = math.atan2(current[1] - pivot[1], current[0] - pivot[0])
+            delta_angle = current_angle - self._rotate_anchor
+            shape.transform = (
+                translate2(pivot[0], pivot[1])
+                @ rotate2(delta_angle)
+                @ translate2(-pivot[0], -pivot[1])
+                @ self._initial_transform
+            )
 
         elif self.transform_mode == TransformMode.SCALE:
-            center = self._scale_anchor
-            start_vec = self._drag_origin - center
-            current_vec = current - center
-            sx = _safe_ratio(current_vec[0], start_vec[0])
-            sy = _safe_ratio(current_vec[1], start_vec[1])
+            current_offset = current - pivot
+            current_distance = float(np.linalg.norm(current_offset))
+            uniform_scale = clamp(current_distance / self._scale_anchor_distance, 0.05, 10.0)
+
             if glfw.get_key(self.window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS:
-                uniform = (sx + sy) * 0.5
-                sx = sy = clamp(uniform, 0.05, 10.0)
+                sx = sy = uniform_scale
             else:
+                start_offset = self._drag_origin - pivot
+                sx = _safe_ratio(current_offset[0], start_offset[0])
+                sy = _safe_ratio(current_offset[1], start_offset[1])
                 sx = clamp(sx, 0.05, 10.0)
                 sy = clamp(sy, 0.05, 10.0)
-            to_origin = translate2(-center[0], -center[1])
-            back = translate2(center[0], center[1])
-            shape.transform = back @ scale2(sx, sy) @ to_origin @ self._initial_transform
+
+            shape.transform = (
+                translate2(pivot[0], pivot[1])
+                @ scale2(sx, sy)
+                @ translate2(-pivot[0], -pivot[1])
+                @ self._initial_transform
+            )
 
     def _select_at(self, point: np.ndarray) -> None:
         tolerance = max(self.viewport.world_width, self.viewport.world_height) * 0.015
@@ -293,7 +305,7 @@ class MiniPaintApp:
             self.renderer.draw_selection_box(self.shapes[self.selected_index])
 
         self._draw_previews()
-        self.hud.draw(self.viewport, self._hud_lines())
+        self.hud.draw(self.viewport, self._hud_columns())
 
     def _draw_previews(self) -> None:
         if self.tool == Tool.LINE and self._draft_start is not None:
@@ -320,42 +332,53 @@ class MiniPaintApp:
                 self.current_color,
             )
 
-    def _hud_lines(self) -> list[str]:
+    def _hud_columns(self) -> list[HudColumn]:
         tool_name = self.tool.name.title()
         transform_name = self.transform_mode.name.title()
         color_name = next(
             (member.name for member in DrawColor if member.value == self.current_color),
-            "CUSTOM",
+            "Custom",
         )
-        selected = "none" if self.selected_index is None else str(self.selected_index + 1)
+        selected = "None" if self.selected_index is None else str(self.selected_index + 1)
         return [
-            "MINI PAINT",
-            f"TOOL: {tool_name}   COLOR: {color_name}",
-            f"TRANSFORM: {transform_name}   SELECTED: {selected}",
-            f"POLYGON SIDES: {self.polygon_sides}",
-            "1 LINE  2 POLYLINE  3 POLYGON  4 SELECT  5 TRANSFORM",
-            "T TRANSLATE  R ROTATE  S SCALE  C COLOR  DEL DELETE",
-            "POLYLINE: ENTER/RIGHT CLICK FINISH   ESC CANCEL",
+            HudColumn(
+                title="STATUS",
+                lines=[
+                    f"Tool: {tool_name}",
+                    f"Color: {color_name}",
+                    f"Transform: {transform_name}",
+                    f"Selected: {selected}",
+                    f"Sides: {self.polygon_sides}",
+                ],
+            ),
+            HudColumn(
+                title="TOOLS",
+                lines=[
+                    "1  Line",
+                    "2  Polyline",
+                    "3  Polygon",
+                    "4  Select",
+                    "5  Transform",
+                    "C  Cycle color",
+                ],
+            ),
+            HudColumn(
+                title="ACTIONS",
+                lines=[
+                    "T  Translate",
+                    "R  Rotate",
+                    "S  Scale",
+                    "Del  Delete",
+                    "Esc  Cancel",
+                    "Enter  Finish polyline",
+                ],
+            ),
         ]
 
 
-def _shape_center(shape: Shape) -> np.ndarray:
-    vertices = shape.world_vertices()
-    if not vertices:
-        return vec2(0.0, 0.0)
-    xs = [vertex[0] for vertex in vertices]
-    ys = [vertex[1] for vertex in vertices]
-    return vec2(sum(xs) / len(xs), sum(ys) / len(ys))
-
-
-def _shape_center_from_transform(transform: np.ndarray, shape: Shape) -> np.ndarray:
-    local_vertices = shape.local_vertices
-    if not local_vertices:
-        return vec2(0.0, 0.0)
-    transformed = [apply2(transform, vertex) for vertex in local_vertices]
-    xs = [vertex[0] for vertex in transformed]
-    ys = [vertex[1] for vertex in transformed]
-    return vec2(sum(xs) / len(xs), sum(ys) / len(ys))
+def _shape_pivot(transform: np.ndarray, shape: Shape) -> np.ndarray:
+    transformed = [apply2(transform, vertex) for vertex in shape.local_vertices]
+    return shape_centroid(transformed)
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:

@@ -38,15 +38,15 @@ class Shape(ABC):
         return [apply2(self.transform, vertex) for vertex in self.local_vertices]
 
     def model_matrix(self) -> np.ndarray:
-        return np.array(
-            [
-                [self.transform[0, 0], self.transform[0, 1], 0.0, self.transform[0, 2]],
-                [self.transform[1, 0], self.transform[1, 1], 0.0, self.transform[1, 2]],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            dtype=np.float32,
-        )
+        from .math_utils import affine3_to_mat4
+
+        return affine3_to_mat4(self.transform)
+
+    def fill_vertices(self) -> list[Vec2]:
+        return list(self.local_vertices)
+
+    def outline_vertices(self) -> list[Vec2]:
+        return list(self.local_vertices)
 
     def hit_test_world(self, world_point: Vec2, tolerance: float) -> bool:
         inverse = np.linalg.inv(self.transform)
@@ -131,7 +131,7 @@ class PolygonShape(Shape):
         return regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
 
     def hit_test(self, point: Vec2, tolerance: float) -> bool:
-        vertices = self.local_vertices
+        vertices = self.outline_vertices()
         if len(vertices) < 3:
             return False
         if _point_in_polygon(point, vertices):
@@ -151,6 +151,13 @@ class PolygonShape(Shape):
             sides=self.sides,
             rotation=self.rotation,
         )
+
+    def fill_vertices(self) -> list[Vec2]:
+        rim = regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
+        return [self.center.copy(), *rim]
+
+    def outline_vertices(self) -> list[Vec2]:
+        return regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
 
 
 def regular_polygon_vertices(

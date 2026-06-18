@@ -99,8 +99,7 @@ class Renderer:
         glLineWidth(2.0)
 
     def draw_shape(self, shape: Shape, *, selected: bool = False) -> None:
-        vertices = shape.local_vertices
-        if not vertices:
+        if not shape.local_vertices:
             return
 
         color = shape.color
@@ -113,16 +112,21 @@ class Renderer:
 
         glUniformMatrix4fv(self.u_model, 1, False, shape.model_matrix())
         glUniform3f(self.u_color, *color)
-        self._upload_vertices(vertices)
 
         if shape.kind == ShapeKind.LINE:
-            self._draw(GL_LINES, len(vertices))
+            self._upload_vertices(shape.local_vertices)
+            self._draw(GL_LINES, 2)
         elif shape.kind == ShapeKind.POLYLINE:
-            self._draw(GL_LINE_STRIP, len(vertices))
+            self._upload_vertices(shape.local_vertices)
+            self._draw(GL_LINE_STRIP, len(shape.local_vertices))
         elif shape.kind == ShapeKind.POLYGON:
-            self._draw(GL_TRIANGLE_FAN, len(vertices))
+            fill_vertices = shape.fill_vertices()
+            outline_vertices = shape.outline_vertices()
+            self._upload_vertices(fill_vertices)
+            self._draw(GL_TRIANGLE_FAN, len(fill_vertices))
             glUniform3f(self.u_color, color[0] * 0.85, color[1] * 0.85, color[2] * 0.85)
-            self._draw(GL_LINE_LOOP, len(vertices))
+            self._upload_vertices(outline_vertices)
+            self._draw(GL_LINE_LOOP, len(outline_vertices))
 
     def draw_preview_polyline(self, points: list[Vec2], color: tuple[float, float, float]) -> None:
         if len(points) < 2:
