@@ -10,7 +10,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .math_utils import Vec2, apply2, distance, identity3, vec2
+from .math_utils import Vec2, apply2, distance, identity3, translate2, vec2
 
 
 class ShapeKind(Enum):
@@ -47,6 +47,9 @@ class Shape(ABC):
 
     def outline_vertices(self) -> list[Vec2]:
         return list(self.local_vertices)
+
+    def transform_origin(self) -> Vec2:
+        return apply2(self.transform, vec2(0.0, 0.0))
 
     def hit_test_world(self, world_point: Vec2, tolerance: float) -> bool:
         inverse = np.linalg.inv(self.transform)
@@ -117,7 +120,6 @@ class PolylineShape(Shape):
 
 @dataclass(kw_only=True)
 class PolygonShape(Shape):
-    center: Vec2
     radius: float
     sides: int
     rotation: float = 0.0
@@ -128,7 +130,25 @@ class PolygonShape(Shape):
 
     @property
     def local_vertices(self) -> list[Vec2]:
-        return regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
+        return regular_polygon_vertices(vec2(0.0, 0.0), self.radius, self.sides, self.rotation)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        color: tuple[float, float, float],
+        center: Vec2,
+        radius: float,
+        sides: int,
+        rotation: float = 0.0,
+    ) -> PolygonShape:
+        return cls(
+            color=color,
+            transform=translate2(center[0], center[1]),
+            radius=radius,
+            sides=sides,
+            rotation=rotation,
+        )
 
     def hit_test(self, point: Vec2, tolerance: float) -> bool:
         vertices = self.outline_vertices()
@@ -146,18 +166,22 @@ class PolygonShape(Shape):
         return PolygonShape(
             color=self.color,
             transform=self.transform.copy(),
-            center=self.center.copy(),
             radius=self.radius,
             sides=self.sides,
             rotation=self.rotation,
         )
 
     def fill_vertices(self) -> list[Vec2]:
-        rim = regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
-        return [self.center.copy(), *rim]
+        origin = vec2(0.0, 0.0)
+        rim = self.outline_vertices()
+        triangles: list[Vec2] = []
+        for index in range(len(rim)):
+            next_index = (index + 1) % len(rim)
+            triangles.extend([origin.copy(), rim[index].copy(), rim[next_index].copy()])
+        return triangles
 
     def outline_vertices(self) -> list[Vec2]:
-        return regular_polygon_vertices(self.center, self.radius, self.sides, self.rotation)
+        return regular_polygon_vertices(vec2(0.0, 0.0), self.radius, self.sides, self.rotation)
 
 
 def regular_polygon_vertices(

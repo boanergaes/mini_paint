@@ -11,7 +11,7 @@ import numpy as np
 from .hud import Hud, HudColumn
 from .math_utils import apply2, clamp, distance, identity3, rotate2, scale2, shape_centroid, translate2, vec2
 from .renderer import Renderer
-from .shapes import LineShape, PolygonShape, PolylineShape, Shape
+from .shapes import LineShape, PolygonShape, PolylineShape, Shape, ShapeKind
 from .viewport import Viewport
 
 WINDOW_WIDTH = 1280
@@ -65,7 +65,6 @@ class MiniPaintApp:
         self._initial_transform = identity3()
         self._transform_pivot = vec2(0.0, 0.0)
         self._rotate_anchor = 0.0
-        self._scale_anchor_distance = 1.0
 
     def run(self) -> None:
         if not glfw.init():
@@ -175,7 +174,7 @@ class MiniPaintApp:
                 radius = distance(self._draft_start, point)
                 rotation = math.atan2(point[1] - self._draft_start[1], point[0] - self._draft_start[0])
                 self.shapes.append(
-                    PolygonShape(
+                    PolygonShape.create(
                         color=self.current_color,
                         center=self._draft_start.copy(),
                         radius=radius,
@@ -210,9 +209,6 @@ class MiniPaintApp:
                 point[1] - self._transform_pivot[1],
                 point[0] - self._transform_pivot[0],
             )
-        elif self.transform_mode == TransformMode.SCALE:
-            offset = point - self._transform_pivot
-            self._scale_anchor_distance = max(float(np.linalg.norm(offset)), 1e-4)
 
     def _apply_live_transform(self) -> None:
         assert self.selected_index is not None
@@ -235,18 +231,21 @@ class MiniPaintApp:
             )
 
         elif self.transform_mode == TransformMode.SCALE:
+            start_offset = self._drag_origin - pivot
             current_offset = current - pivot
+            start_distance = float(np.linalg.norm(start_offset))
             current_distance = float(np.linalg.norm(current_offset))
-            uniform_scale = clamp(current_distance / self._scale_anchor_distance, 0.05, 10.0)
+            uniform_scale = clamp(
+                current_distance / max(start_distance, 1e-4),
+                0.05,
+                10.0,
+            )
 
             if glfw.get_key(self.window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS:
                 sx = sy = uniform_scale
             else:
-                start_offset = self._drag_origin - pivot
-                sx = _safe_ratio(current_offset[0], start_offset[0])
-                sy = _safe_ratio(current_offset[1], start_offset[1])
-                sx = clamp(sx, 0.05, 10.0)
-                sy = clamp(sy, 0.05, 10.0)
+                sx = _positive_scale_ratio(current_offset[0], start_offset[0], uniform_scale)
+                sy = _positive_scale_ratio(current_offset[1], start_offset[1], uniform_scale)
 
             shape.transform = (
                 translate2(pivot[0], pivot[1])
@@ -377,11 +376,14 @@ class MiniPaintApp:
 
 
 def _shape_pivot(transform: np.ndarray, shape: Shape) -> np.ndarray:
+    if shape.kind == ShapeKind.POLYGON:
+        return apply2(transform, vec2(0.0, 0.0))
     transformed = [apply2(transform, vertex) for vertex in shape.local_vertices]
     return shape_centroid(transformed)
 
 
-def _safe_ratio(numerator: float, denominator: float) -> float:
-    if abs(denominator) < 1e-6:
-        return 1.0
-    return numerator / denominator
+def _positive_scale_ratio(current: float, start: float, fallback: float) -> float:
+    if abs(start) < 1e-6:
+        return fallback
+    ratio = abs(current / start)
+    return clamp(ratio, 0.05, 10.0)

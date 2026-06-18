@@ -14,6 +14,7 @@ from OpenGL.GL import (
     GL_LINE_STRIP,
     GL_LINES,
     GL_STATIC_DRAW,
+    GL_TRIANGLES,
     GL_TRIANGLE_FAN,
     GL_VERTEX_SHADER,
     glBindBuffer,
@@ -56,7 +57,9 @@ uniform mat4 uProjection;
 uniform mat4 uModel;
 
 void main() {
-    gl_Position = uProjection * uModel * vec4(aPos, 0.0, 1.0);
+    vec4 world = uModel * vec4(aPos, 0.0, 1.0);
+    vec4 clip = uProjection * world;
+    gl_Position = vec4(clip.xy, 0.0, 1.0);
 }
 """
 
@@ -123,7 +126,7 @@ class Renderer:
             fill_vertices = shape.fill_vertices()
             outline_vertices = shape.outline_vertices()
             self._upload_vertices(fill_vertices)
-            self._draw(GL_TRIANGLE_FAN, len(fill_vertices))
+            self._draw(GL_TRIANGLES, len(fill_vertices))
             glUniform3f(self.u_color, color[0] * 0.85, color[1] * 0.85, color[2] * 0.85)
             self._upload_vertices(outline_vertices)
             self._draw(GL_LINE_LOOP, len(outline_vertices))
@@ -145,11 +148,12 @@ class Renderer:
         rotation: float,
         color: tuple[float, float, float],
     ) -> None:
+        from .math_utils import affine3_to_mat4, translate2
         from .shapes import regular_polygon_vertices
 
-        vertices = regular_polygon_vertices(center, radius, sides, rotation)
-        identity = np.eye(4, dtype=np.float32)
-        glUniformMatrix4fv(self.u_model, 1, False, identity)
+        vertices = regular_polygon_vertices(vec2(0.0, 0.0), radius, sides, rotation)
+        model = affine3_to_mat4(translate2(center[0], center[1]))
+        glUniformMatrix4fv(self.u_model, 1, False, model)
         glUniform3f(self.u_color, *color)
         self._upload_vertices(vertices)
         self._draw(GL_LINE_LOOP, len(vertices))

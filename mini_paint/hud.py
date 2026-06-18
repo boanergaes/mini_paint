@@ -11,6 +11,8 @@ from .math_utils import vec2
 from .renderer import Renderer
 from .viewport import Viewport
 
+_FONT_HEIGHT = 8.0
+
 _FONT = {
     " ": [],
     "-": [((0, 4), (6, 4))],
@@ -152,13 +154,13 @@ class Hud:
             for (x1, y1), (x2, y2) in segments:
                 start = self._px_to_ndc(
                     cursor_px + x1 * self.char_width_px,
-                    y_px + y1 * self.char_height_px,
+                    y_px + (_FONT_HEIGHT - y1) * self.char_height_px,
                     viewport.window_width,
                     viewport.window_height,
                 )
                 end = self._px_to_ndc(
                     cursor_px + x2 * self.char_width_px,
-                    y_px + y2 * self.char_height_px,
+                    y_px + (_FONT_HEIGHT - y2) * self.char_height_px,
                     viewport.window_width,
                     viewport.window_height,
                 )
