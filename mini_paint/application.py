@@ -242,10 +242,10 @@ class MiniPaintApp:
             )
 
             if glfw.get_key(self.window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS:
+                sx = sy = uniform_scale
+            else:
                 sx = _positive_scale_ratio(current_offset[0], start_offset[0], uniform_scale)
                 sy = _positive_scale_ratio(current_offset[1], start_offset[1], uniform_scale)
-            else:
-                sx = sy = uniform_scale
 
             shape.transform = (
                 translate2(pivot[0], pivot[1])
@@ -366,7 +366,7 @@ class MiniPaintApp:
                 lines=[
                     "T  Translate",
                     "R  Rotate",
-                    "S  Scale",
+                    "S  Scale (Shift uniform)",
                     "Del  Delete",
                     "Esc  Cancel",
                     "Enter  Finish polyline",
