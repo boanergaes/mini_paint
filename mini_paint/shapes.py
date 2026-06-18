@@ -34,8 +34,8 @@ class Shape(ABC):
     def local_vertices(self) -> list[Vec2]:
         raise NotImplementedError
 
-    def world_vertices(self) -> list[Vec2]:
-        return [apply2(self.transform, vertex) for vertex in self.local_vertices]
+    def world_outline_vertices(self) -> list[Vec2]:
+        return [apply2(self.transform, vertex) for vertex in self.outline_vertices()]
 
     def model_matrix(self) -> np.ndarray:
         from .math_utils import affine3_to_mat4
@@ -52,9 +52,28 @@ class Shape(ABC):
         return apply2(self.transform, vec2(0.0, 0.0))
 
     def hit_test_world(self, world_point: Vec2, tolerance: float) -> bool:
-        inverse = np.linalg.inv(self.transform)
-        local_point = apply2(inverse, world_point)
-        return self.hit_test(local_point, tolerance)
+        outline = self.world_outline_vertices()
+        if not outline:
+            return False
+
+        if self.kind == ShapeKind.POLYGON and len(outline) >= 3:
+            if _point_in_polygon(world_point, outline):
+                return True
+            for index in range(len(outline)):
+                start = outline[index]
+                end = outline[(index + 1) % len(outline)]
+                if _distance_point_to_segment(world_point, start, end) <= tolerance:
+                    return True
+            return False
+
+        if self.kind == ShapeKind.LINE and len(outline) >= 2:
+            return _distance_point_to_segment(world_point, outline[0], outline[1]) <= tolerance
+
+        if self.kind == ShapeKind.POLYLINE:
+            for index in range(len(outline) - 1):
+                if _distance_point_to_segment(world_point, outline[index], outline[index + 1]) <= tolerance:
+                    return True
+        return False
 
     @abstractmethod
     def hit_test(self, point: Vec2, tolerance: float) -> bool:

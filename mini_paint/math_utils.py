@@ -66,7 +66,7 @@ def clamp(value: float, low: float, high: float) -> float:
 
 
 def affine3_to_mat4(matrix: np.ndarray) -> np.ndarray:
-    """Convert a 2D column-vector affine matrix to a 4x4 OpenGL matrix."""
+    """Convert a 2D affine matrix to a 4x4 matrix."""
     return np.array(
         [
             [matrix[0, 0], matrix[0, 1], 0.0, matrix[0, 2]],
@@ -76,6 +76,16 @@ def affine3_to_mat4(matrix: np.ndarray) -> np.ndarray:
         ],
         dtype=np.float32,
     )
+
+
+def to_gl_mat3(matrix: np.ndarray) -> np.ndarray:
+    """Pack a 3x3 affine matrix for glUniformMatrix3fv (column-major)."""
+    return np.ascontiguousarray(matrix.T, dtype=np.float32).flatten()
+
+
+def to_gl_mat4(matrix: np.ndarray) -> np.ndarray:
+    """Pack a 4x4 matrix for glUniformMatrix4fv (column-major)."""
+    return np.ascontiguousarray(matrix.T, dtype=np.float32).flatten()
 
 
 def shape_centroid(vertices: list[Vec2]) -> Vec2:

@@ -11,7 +11,7 @@ import numpy as np
 from .hud import Hud, HudColumn
 from .math_utils import apply2, clamp, distance, identity3, rotate2, scale2, shape_centroid, translate2, vec2
 from .renderer import Renderer
-from .shapes import LineShape, PolygonShape, PolylineShape, Shape, ShapeKind
+from .shapes import LineShape, PolygonShape, PolylineShape, Shape
 from .viewport import Viewport
 
 WINDOW_WIDTH = 1280
@@ -242,10 +242,10 @@ class MiniPaintApp:
             )
 
             if glfw.get_key(self.window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS:
-                sx = sy = uniform_scale
-            else:
                 sx = _positive_scale_ratio(current_offset[0], start_offset[0], uniform_scale)
                 sy = _positive_scale_ratio(current_offset[1], start_offset[1], uniform_scale)
+            else:
+                sx = sy = uniform_scale
 
             shape.transform = (
                 translate2(pivot[0], pivot[1])
@@ -376,10 +376,7 @@ class MiniPaintApp:
 
 
 def _shape_pivot(transform: np.ndarray, shape: Shape) -> np.ndarray:
-    if shape.kind == ShapeKind.POLYGON:
-        return apply2(transform, vec2(0.0, 0.0))
-    transformed = [apply2(transform, vertex) for vertex in shape.local_vertices]
-    return shape_centroid(transformed)
+    return shape_centroid([apply2(transform, vertex) for vertex in shape.local_vertices])
 
 
 def _positive_scale_ratio(current: float, start: float, fallback: float) -> float:

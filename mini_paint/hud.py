@@ -74,9 +74,11 @@ class Hud:
         self.char_height_px = 1.8
 
     def draw(self, viewport: Viewport, columns: list[HudColumn]) -> None:
-        identity = np.eye(4, dtype=np.float32)
-        glUniformMatrix4fv(self.renderer.u_projection, 1, False, identity)
-        glUniformMatrix4fv(self.renderer.u_model, 1, False, identity)
+        from .math_utils import to_gl_mat4
+
+        identity4 = to_gl_mat4(np.eye(4, dtype=np.float32))
+        glUniformMatrix4fv(self.renderer.u_projection, 1, False, identity4)
+        self.renderer._set_model_identity()
 
         panel_height_px = self._panel_height(columns)
         panel_width_px = self.margin_px * 2 + len(columns) * self.column_width_px

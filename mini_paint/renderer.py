@@ -41,11 +41,12 @@ from OpenGL.GL import (
     glUseProgram,
     glVertexAttribPointer,
     glViewport,
+    glUniformMatrix3fv,
     glUniformMatrix4fv,
     glUniform3f,
 )
 
-from .math_utils import Vec2, vec2
+from .math_utils import Vec2, identity3, to_gl_mat3, to_gl_mat4, vec2
 from .shapes import Shape, ShapeKind
 from .viewport import Viewport
 
@@ -53,12 +54,12 @@ VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec2 aPos;
 
+uniform mat3 uModel;
 uniform mat4 uProjection;
-uniform mat4 uModel;
 
 void main() {
-    vec4 world = uModel * vec4(aPos, 0.0, 1.0);
-    vec4 clip = uProjection * world;
+    vec2 world = (uModel * vec3(aPos, 1.0)).xy;
+    vec4 clip = uProjection * vec4(world, 0.0, 1.0);
     gl_Position = vec4(clip.xy, 0.0, 1.0);
 }
 """
@@ -72,6 +73,8 @@ void main() {
     FragColor = vec4(uColor, 1.0);
 }
 """
+
+_IDENTITY3_GL = to_gl_mat3(identity3())
 
 
 class Renderer:
@@ -98,8 +101,14 @@ class Renderer:
         glClearColor(*background, 1.0)
         glClear(GL_COLOR_BUFFER_BIT)
         glUseProgram(self.program)
-        glUniformMatrix4fv(self.u_projection, 1, False, viewport.projection_matrix())
+        glUniformMatrix4fv(self.u_projection, 1, False, viewport.projection_matrix_gl())
         glLineWidth(2.0)
+
+    def _set_model(self, transform: np.ndarray) -> None:
+        glUniformMatrix3fv(self.u_model, 1, False, to_gl_mat3(transform))
+
+    def _set_model_identity(self) -> None:
+        glUniformMatrix3fv(self.u_model, 1, False, _IDENTITY3_GL)
 
     def draw_shape(self, shape: Shape, *, selected: bool = False) -> None:
         if not shape.local_vertices:
@@ -113,7 +122,7 @@ class Renderer:
                 min(1.0, color[2] + 0.25),
             )
 
-        glUniformMatrix4fv(self.u_model, 1, False, shape.model_matrix())
+        self._set_model(shape.transform)
         glUniform3f(self.u_color, *color)
 
         if shape.kind == ShapeKind.LINE:
@@ -134,8 +143,7 @@ class Renderer:
     def draw_preview_polyline(self, points: list[Vec2], color: tuple[float, float, float]) -> None:
         if len(points) < 2:
             return
-        identity = np.eye(4, dtype=np.float32)
-        glUniformMatrix4fv(self.u_model, 1, False, identity)
+        self._set_model_identity()
         glUniform3f(self.u_color, *color)
         self._upload_vertices(points)
         self._draw(GL_LINE_STRIP, len(points))
@@ -148,19 +156,17 @@ class Renderer:
         rotation: float,
         color: tuple[float, float, float],
     ) -> None:
-        from .math_utils import affine3_to_mat4, translate2
+        from .math_utils import translate2
         from .shapes import regular_polygon_vertices
 
         vertices = regular_polygon_vertices(vec2(0.0, 0.0), radius, sides, rotation)
-        model = affine3_to_mat4(translate2(center[0], center[1]))
-        glUniformMatrix4fv(self.u_model, 1, False, model)
+        self._set_model(translate2(center[0], center[1]))
         glUniform3f(self.u_color, *color)
         self._upload_vertices(vertices)
         self._draw(GL_LINE_LOOP, len(vertices))
 
     def draw_axes(self, viewport: Viewport) -> None:
-        identity = np.eye(4, dtype=np.float32)
-        glUniformMatrix4fv(self.u_model, 1, False, identity)
+        self._set_model_identity()
         axes = [
             vec2_pair(viewport.world_left, 0.0, viewport.world_right, 0.0),
             vec2_pair(0.0, viewport.world_bottom, 0.0, viewport.world_top),
@@ -171,7 +177,7 @@ class Renderer:
             self._draw(GL_LINES, 2)
 
     def draw_selection_box(self, shape: Shape) -> None:
-        bounds = _bounds(shape.world_vertices())
+        bounds = _bounds(shape.world_outline_vertices())
         if bounds is None:
             return
         min_x, min_y, max_x, max_y = bounds
@@ -182,8 +188,7 @@ class Renderer:
             vec2(max_x + padding, max_y + padding),
             vec2(min_x - padding, max_y + padding),
         ]
-        identity = np.eye(4, dtype=np.float32)
-        glUniformMatrix4fv(self.u_model, 1, False, identity)
+        self._set_model_identity()
         glUniform3f(self.u_color, 1.0, 0.85, 0.2)
         self._upload_vertices(corners)
         self._draw(GL_LINE_LOOP, 4)
